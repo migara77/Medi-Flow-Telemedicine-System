@@ -1,0 +1,253 @@
+import React, { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import axios from 'axios';
+
+function BookAppointmentComplete() {
+  const { doctorId } = useParams();
+  const navigate = useNavigate();
+
+  const [doctor, setDoctor] = useState(null);
+  const [selectedDate, setSelectedDate] = useState('');
+  const [availableSlots, setAvailableSlots] = useState([]);
+  const [selectedSlot, setSelectedSlot] = useState('');
+  const [reason, setReason] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [step, setStep] = useState(1); // Step 1: Select date, Step 2: Select time, Step 3: Reason
+
+  useEffect(() => {
+    fetchDoctor();
+  }, [doctorId]);
+
+  useEffect(() => {
+    if (selectedDate) {
+      fetchAvailableSlots();
+    }
+  }, [selectedDate]);
+
+  const fetchDoctor = async () => {
+    try {
+      const response = await axios.get(`${process.env.REACT_APP_API_URL}/doctors`);
+      const doctors = Array.isArray(response.data) ? response.data : [];
+      const foundDoctor = doctors.find(d => d.id === parseInt(doctorId));
+      if (foundDoctor) {
+        setDoctor(foundDoctor);
+      } else {
+        setError('Doctor not found');
+      }
+    } catch (err) {
+      setError('Failed to load doctor information');
+    }
+  };
+
+  const fetchAvailableSlots = async () => {
+    try {
+      const response = await axios.get(
+        `${process.env.REACT_APP_API_URL}/doctors/${doctorId}/slots?date=${selectedDate}`
+      );
+      setAvailableSlots(response.data.slots || []);
+      setSelectedSlot('');
+    } catch (err) {
+      console.error('Error fetching slots:', err);
+      setAvailableSlots([]);
+    }
+  };
+
+  const getMinDate = () => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    return tomorrow.toISOString().split('T')[0];
+  };
+
+  const handleBookAppointment = async () => {
+    if (!selectedDate || !selectedSlot || !reason) {
+      setError('Please fill all fields');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const appointmentDateTime = `${selectedDate} ${selectedSlot}`;
+      
+      const response = await axios.post(
+        `${process.env.REACT_APP_API_URL}/appointments`,
+        {
+          doctor_id: doctorId,
+          appointment_date: appointmentDateTime,
+          reason: reason,
+        },
+        {
+          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+        }
+      );
+
+      // Redirect to payment page
+      navigate(`/payment/${response.data.appointment.id}`);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to book appointment');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!doctor) {
+    return <div className="p-8 text-center text-gray-600">Loading doctor information...</div>;
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-8">
+      <div className="max-w-2xl mx-auto">
+        {/* Doctor Card */}
+        <div className="bg-white rounded-lg shadow-lg p-8 mb-8">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-800">Dr. {doctor.name}</h1>
+              <p className="text-indigo-600 font-semibold text-lg">{doctor.specialization}</p>
+              <p className="text-gray-600 mt-2">{doctor.email}</p>
+            </div>
+            <div className="text-right">
+              <div className="bg-indigo-100 rounded-lg p-4">
+                <p className="text-sm text-gray-600">Experience</p>
+                <p className="text-2xl font-bold text-indigo-600">{doctor.experience_years || 'N/A'}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Booking Form */}
+        <div className="bg-white rounded-lg shadow-lg p-8">
+          {/* Step Indicator */}
+          <div className="mb-8">
+            <div className="flex items-center justify-between mb-4">
+              <div className={`flex-1 text-center ${step >= 1 ? 'text-indigo-600 font-bold' : 'text-gray-400'}`}>
+                <div className={`inline-block w-10 h-10 rounded-full ${step >= 1 ? 'bg-indigo-600 text-white' : 'bg-gray-200'} flex items-center justify-center mb-2`}>
+                  1
+                </div>
+                <p className="text-sm">Select Date</p>
+              </div>
+              <div className={`flex-1 text-center ${step >= 2 ? 'text-indigo-600 font-bold' : 'text-gray-400'}`}>
+                <div className={`inline-block w-10 h-10 rounded-full ${step >= 2 ? 'bg-indigo-600 text-white' : 'bg-gray-200'} flex items-center justify-center mb-2`}>
+                  2
+                </div>
+                <p className="text-sm">Select Time</p>
+              </div>
+              <div className={`flex-1 text-center ${step >= 3 ? 'text-indigo-600 font-bold' : 'text-gray-400'}`}>
+                <div className={`inline-block w-10 h-10 rounded-full ${step >= 3 ? 'bg-indigo-600 text-white' : 'bg-gray-200'} flex items-center justify-center mb-2`}>
+                  3
+                </div>
+                <p className="text-sm">Details</p>
+              </div>
+            </div>
+          </div>
+
+          {error && (
+            <div className="mb-6 p-4 bg-red-100 text-red-700 rounded-lg">
+              {error}
+            </div>
+          )}
+
+          {/* Step 1: Date Selection */}
+          {step === 1 && (
+            <div>
+              <label className="block text-gray-700 font-semibold mb-4">Select Appointment Date</label>
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={(e) => {
+                  setSelectedDate(e.target.value);
+                  setStep(2);
+                }}
+                min={getMinDate()}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600 transition text-lg"
+              />
+              <p className="text-gray-500 text-sm mt-2">Select a date from tomorrow onwards</p>
+            </div>
+          )}
+
+          {/* Step 2: Time Selection */}
+          {step === 2 && selectedDate && (
+            <div>
+              <button
+                onClick={() => setStep(1)}
+                className="text-indigo-600 hover:text-indigo-700 font-semibold mb-4 flex items-center"
+              >
+                ← Change Date
+              </button>
+              <label className="block text-gray-700 font-semibold mb-4">
+                Select Time Slot for {new Date(selectedDate).toLocaleDateString()}
+              </label>
+              
+              {availableSlots.length === 0 ? (
+                <div className="p-4 bg-yellow-100 text-yellow-700 rounded-lg">
+                  No available slots for this date. Please select another date.
+                </div>
+              ) : (
+                <div className="grid grid-cols-3 gap-3 mb-4">
+                  {availableSlots.map((slot) => (
+                    <button
+                      key={slot.time}
+                      onClick={() => {
+                        setSelectedSlot(slot.time);
+                        setStep(3);
+                      }}
+                      className={`p-3 rounded-lg font-semibold transition ${
+                        selectedSlot === slot.time
+                          ? 'bg-indigo-600 text-white'
+                          : 'bg-gray-100 text-gray-800 hover:bg-indigo-100'
+                      }`}
+                    >
+                      {slot.time}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Step 3: Reason */}
+          {step === 3 && (
+            <div>
+              <button
+                onClick={() => setStep(2)}
+                className="text-indigo-600 hover:text-indigo-700 font-semibold mb-4 flex items-center"
+              >
+                ← Change Time
+              </button>
+              
+              <div className="mb-6 p-4 bg-indigo-50 rounded-lg">
+                <p className="text-gray-700"><strong>Date:</strong> {new Date(selectedDate).toLocaleDateString()}</p>
+                <p className="text-gray-700"><strong>Time:</strong> {selectedSlot}</p>
+              </div>
+
+              <label className="block text-gray-700 font-semibold mb-2">Reason for Visit</label>
+              <textarea
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                placeholder="Describe your symptoms or reason for visiting..."
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600 transition mb-6"
+                rows="4"
+              />
+
+              <button
+                onClick={handleBookAppointment}
+                disabled={loading}
+                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 rounded-lg transition disabled:opacity-50"
+              >
+                {loading ? 'Processing...' : 'Proceed to Payment'}
+              </button>
+
+              <button
+                onClick={() => navigate('/doctors')}
+                className="w-full mt-3 text-indigo-600 hover:text-indigo-700 font-semibold py-3"
+              >
+                Back to Doctors
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default BookAppointmentComplete;
