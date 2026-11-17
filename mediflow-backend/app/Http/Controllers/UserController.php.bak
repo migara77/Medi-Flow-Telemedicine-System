@@ -1,0 +1,142 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\User;
+use App\Models\Appointment;
+use App\Models\Payment;
+use Illuminate\Http\Request;
+
+class UserController extends Controller
+{
+    /**
+     * Get all users (Admin only)
+     */
+    public function getAllUsers()
+    {
+        $authUser = auth('api')->user();
+        
+        if ($authUser->role !== 'admin') {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $users = User::select('id', 'name', 'email', 'phone', 'role', 'is_suspended', 'created_at')->get();
+        
+        return response()->json($users);
+    }
+
+    /**
+     * Delete a user (Admin only)
+     */
+    public function deleteUser($id)
+    {
+        $authUser = auth('api')->user();
+        
+        if ($authUser->role !== 'admin') {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        if ($authUser->id == $id) {
+            return response()->json(['message' => 'Cannot delete your own account'], 400);
+        }
+
+        $user = User::find($id);
+        if (!$user) {
+            return response()->json(['message' => 'User not found'], 404);
+        }
+
+        $user->delete();
+
+        return response()->json(['message' => 'User deleted successfully']);
+    }
+
+    /**
+     * Suspend a user (Admin only)
+     */
+    public function suspendUser($id)
+    {
+        $authUser = auth('api')->user();
+        
+        if ($authUser->role !== 'admin') {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        if ($authUser->id == $id) {
+            return response()->json(['message' => 'Cannot suspend your own account'], 400);
+        }
+
+        $user = User::find($id);
+        if (!$user) {
+            return response()->json(['message' => 'User not found'], 404);
+        }
+
+        $user->update(['is_suspended' => true]);
+
+        return response()->json(['message' => 'User suspended successfully', 'user' => $user]);
+    }
+
+    /**
+     * Unsuspend a user (Admin only)
+     */
+    public function unsuspendUser($id)
+    {
+        $authUser = auth('api')->user();
+        
+        if ($authUser->role !== 'admin') {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $user = User::find($id);
+        if (!$user) {
+            return response()->json(['message' => 'User not found'], 404);
+        }
+
+        $user->update(['is_suspended' => false]);
+
+        return response()->json(['message' => 'User unsuspended successfully', 'user' => $user]);
+    }
+
+    /**
+     * Get appointment count (Admin only)
+     */
+    public function getAppointmentCount()
+    {
+        $authUser = auth('api')->user();
+        
+        if ($authUser->role !== 'admin') {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $count = Appointment::count();
+        
+        return response()->json(['count' => $count]);
+    }
+
+    /**
+     * Get system statistics (Admin only)
+     */
+    public function getStatistics()
+    {
+        $authUser = auth('api')->user();
+        
+        if ($authUser->role !== 'admin') {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $statistics = [
+            'total_users' => User::count(),
+            'total_doctors' => User::where('role', 'doctor')->count(),
+            'total_patients' => User::where('role', 'patient')->count(),
+            'total_admins' => User::where('role', 'admin')->count(),
+            'total_appointments' => Appointment::count(),
+            'pending_appointments' => Appointment::where('status', 'pending')->count(),
+            'confirmed_appointments' => Appointment::where('status', 'confirmed')->count(),
+            'completed_appointments' => Appointment::where('status', 'completed')->count(),
+            'total_payments' => Payment::count(),
+            'total_revenue' => Payment::where('status', 'completed')->sum('amount') ?? 0,
+            'suspended_users' => User::where('is_suspended', true)->count(),
+        ];
+
+        return response()->json($statistics);
+    }
+}

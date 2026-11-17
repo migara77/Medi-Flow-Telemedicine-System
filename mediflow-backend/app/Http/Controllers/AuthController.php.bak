@@ -1,0 +1,129 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\User;
+use App\Models\Doctor;
+use App\Models\Specialization;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
+use PHPOpenSourceSaver\JWTAuth\Facades\JwtAuth;
+
+class AuthController extends Controller
+{
+    public function register(Request $request)
+    {
+        $validated = $request->validate([
+            'name' => 'required|string|max:255',
+            'email' => 'required|string|email|max:255|unique:users',
+            'phone' => 'required|string|max:20',
+            'password' => 'required|string|min:6|confirmed',
+            'role' => 'required|in:patient,doctor,admin',
+            'specialization' => 'nullable|string|max:255',
+            'experience_years' => 'nullable|integer',
+            'bio' => 'nullable|string',
+        ]);
+
+        $user = User::create([
+            'name' => $validated['name'],
+            'email' => $validated['email'],
+            'phone' => $validated['phone'],
+            'password' => Hash::make($validated['password']),
+            'role' => $validated['role'],
+            'specialization' => $validated['specialization'] ?? null,
+            'experience_years' => $validated['experience_years'] ?? null,
+            'bio' => $validated['bio'] ?? null,
+        ]);
+
+        // If doctor, create doctor record
+        if ($validated['role'] === 'doctor') {
+            // Find or create specialization
+            $specializationName = $validated['specialization'] ?? 'General';
+            $specialization = Specialization::firstOrCreate(
+                ['name' => $specializationName],
+                ['description' => $specializationName]
+            );
+
+            Doctor::create([
+                'user_id' => $user->id,
+                'specialization_id' => $specialization->id,
+                'verified' => false,
+                'bio' => $validated['bio'] ?? null,
+                'experience_years' => $validated['experience_years'] ?? 0,
+            ]);
+        }
+
+        $token = JwtAuth::fromUser($user);
+
+        return response()->json([
+            'message' => 'User registered successfully',
+            'access_token' => $token,
+            'token_type' => 'bearer',
+            'user' => $this->getUserData($user),
+        ], 201);
+    }
+
+    public function login(Request $request)
+    {
+        $validated = $request->validate([
+            'email' => 'required|email',
+            'password' => 'required|string',
+        ]);
+
+        $credentials = $validated;
+
+        if (!$token = auth('api')->attempt($credentials)) {
+            return response()->json([
+                'message' => 'Invalid email or password'
+            ], 401);
+        }
+
+        return $this->respondWithToken($token);
+    }
+
+    public function logout(Request $request)
+    {
+        auth('api')->logout();
+
+        return response()->json([
+            'message' => 'Logged out successfully'
+        ]);
+    }
+
+    public function user(Request $request)
+    {
+        $user = auth('api')->user();
+        return response()->json([
+            'user' => $this->getUserData($user)
+        ]);
+    }
+
+    protected function respondWithToken($token)
+    {
+        $user = auth('api')->user();
+
+        return response()->json([
+            'message' => 'Login successful',
+            'access_token' => $token,
+            'token_type' => 'bearer',
+            'user' => $this->getUserData($user),
+        ]);
+    }
+
+    protected function getUserData($user)
+    {
+        if (!$user) {
+            return [];
+        }
+
+        return [
+            'id' => $user->id,
+            'name' => $user->name,
+            'email' => $user->email,
+            'phone' => $user->phone,
+            'role' => $user->role,
+            'bio' => $user->bio,
+            'experience_years' => $user->experience_years,
+        ];
+    }
+}
